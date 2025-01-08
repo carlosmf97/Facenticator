@@ -1,24 +1,18 @@
-//
-//  ContentView.swift
-//  Facenticator
-//
-//  Created by Carlos Muñoz Fernández on 1/1/25.
-//
-
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var biometricManager = BiometricManager.shared
+    @StateObject private var faceManager = FaceRegistrationManager.shared
+    
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        Group {
+            if !faceManager.isRegistered {
+                FaceRegistrationView()
+            } else if !biometricManager.isAuthenticated {
+                AppLockView()
+            } else {
+                MainTabView()
+            }
         }
-        .padding()
     }
-}
-
-#Preview {
-    ContentView()
-}
+} 
