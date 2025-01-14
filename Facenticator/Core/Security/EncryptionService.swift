@@ -48,4 +48,13 @@ class EncryptionService {
             return nil
         }
     }
+    
+    func hash(data: Data) -> Data {
+        let hashedData = SHA256.hash(data: data)
+        return Data(hashedData)
+    }
+    
+    func compareHashes(_ hash1: Data, _ hash2: Data) -> Bool {
+        return hash1 == hash2
+    }
 } 

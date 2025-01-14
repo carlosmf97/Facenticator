@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var showingBiometricSetup = false
     @State private var showingDeleteConfirmation = false
     @State private var showingBackupInfo = false
+    @StateObject private var biometricManager = BiometricManager.shared
     
     var body: some View {
         VStack {
@@ -59,6 +60,10 @@ struct SettingsView: View {
                         Text(Bundle.main.appVersion)
                             .foregroundColor(.secondary)
                     }
+                }
+                
+                Section(header: Text("Verificación")) {
+                    Toggle("Saltar introducción de verificación", isOn: $biometricManager.skipVerificationIntro)
                 }
             }
             .listStyle(.insetGrouped)

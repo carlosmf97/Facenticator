@@ -10,11 +10,24 @@ class FaceRegistrationManager: NSObject, ObservableObject {
     @Published var currentGesture: FacialGesture?
     @Published var isRegistered = false
     
+    private var registeredFaceHash: Data? {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: "RegisteredFaceHash") else {
+                return nil
+            }
+            return data
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "RegisteredFaceHash")
+        }
+    }
+    
     let arSession = ARSession()
     private var faceAnchor: ARFaceAnchor?
-    private var registeredFaceGeometry: ARFaceGeometry?
     private var currentGestureIndex = 0
     private var verificationGesture: FacialGesture?
+    
+    private var registrationHashes: [Data] = [] // Array para guardar los hashes de cada gesto
     
     private override init() {
         super.init()
@@ -22,22 +35,10 @@ class FaceRegistrationManager: NSObject, ObservableObject {
         arSession.delegate = self
     }
     
-    public func stopTracking() {
-        // Solo permitimos detener si hemos completado la verificación
-        if !isVerificationMode || registrationProgress >= 1.0 {
-            arSession.pause()
-            faceAnchor = nil
-            currentGesture = nil
-        }
-    }
-    
     public func startRegistration() {
         DispatchQueue.main.async {
-            // Si ya está registrado, iniciamos verificación en su lugar
-            if self.isRegistered {
-                self.startVerification()
-                return
-            }
+            print("Iniciando registro...")
+            self.printRegistrationStatus() // Debug inicial
             
             self.isVerificationMode = false
             self.registrationProgress = 0
@@ -52,13 +53,20 @@ class FaceRegistrationManager: NSObject, ObservableObject {
     
     public func startVerification() {
         DispatchQueue.main.async {
+            print("Iniciando verificación...")
+            self.printRegistrationStatus() // Debug de verificación
+            
+            guard self.registeredFaceHash != nil else {
+                print("Error: Intento de verificación sin registro previo")
+                self.registrationStatus = "Error: No hay cara registrada"
+                return
+            }
+            
             self.isVerificationMode = true
             self.registrationProgress = 0
-            
-            // Seleccionar un gesto aleatorio para verificación
             self.verificationGesture = FacialGesture.registrationGestures.randomElement()
             self.currentGesture = self.verificationGesture
-            self.registrationStatus = "Realiza el gesto solicitado"
+            self.registrationStatus = "Realiza el gesto: \(self.verificationGesture?.description ?? "")"
             
             let configuration = ARFaceTrackingConfiguration()
             self.arSession.run(configuration)
@@ -66,39 +74,97 @@ class FaceRegistrationManager: NSObject, ObservableObject {
     }
     
     private func validateFaceGeometry(_ geometry: ARFaceGeometry) -> Bool {
-        guard let registeredGeometry = registeredFaceGeometry else {
-            // Si no hay geometría registrada, la guardamos
-            registeredFaceGeometry = geometry
-            return true
-        }
-        
-        // Comparar la geometría actual con la registrada
-        // Esto es una simplificación - en producción necesitarías un algoritmo más robusto
         let vertices = geometry.vertices
-        let registeredVertices = registeredGeometry.vertices
-        var totalDistance: Float = 0
+        let currentHash = calculateFaceHash(vertices)
         
-        for i in 0..<vertices.count {
-            let distance = simd_distance(vertices[i], registeredVertices[i])
-            totalDistance += distance
+        // Si estamos en modo verificación
+        if isVerificationMode {
+            guard let savedHash = registeredFaceHash else {
+                print("No hay hash facial guardado")
+                return false
+            }
+            
+            // Primero verificamos si es la misma persona
+            let similarity = compareFaceHashes(currentHash, savedHash)
+            print("Verificación - Similitud facial: \(similarity * 100)%")
+            
+            if similarity < 0.80 {
+                print("Cara no reconocida")
+                registrationStatus = "Cara no reconocida"
+                return false
+            }
+            
+            // Si es la misma persona, verificamos el gesto
+            if let detectedGesture = detectGesture(faceAnchor!) {
+                if detectedGesture == verificationGesture {
+                    print("Gesto correcto y cara verificada")
+                    return true
+                } else {
+                    print("Esperando gesto correcto...")
+                    return false
+                }
+            }
+            
+            return false
         }
         
-        let averageDistance = totalDistance / Float(vertices.count)
-        return averageDistance < 0.1 // Umbral de similitud
+        // Si estamos registrando, guardamos el hash de cada gesto
+        if currentGestureIndex < FacialGesture.registrationGestures.count {
+            registrationHashes.append(currentHash)
+            print("Hash guardado para gesto \(currentGestureIndex + 1)")
+            
+            // Al completar todos los gestos, combinamos los hashes
+            if currentGestureIndex == FacialGesture.registrationGestures.count - 1 {
+                let finalHash = combineHashes(registrationHashes)
+                registeredFaceHash = finalHash
+                UserDefaults.standard.set(finalHash, forKey: "RegisteredFaceHash")
+                UserDefaults.standard.synchronize()
+                print("Hash final combinado y guardado")
+                registrationHashes.removeAll()
+            }
+        }
+        
+        return true
+    }
+    
+    private func calculateFaceHash(_ vertices: UnsafePointer<vector_float3>) -> Data {
+        var hashableData = Data()
+        let vertexCount = 1220 // Usamos todos los vértices
+        
+        // Calcular el centro de la cara para normalización
+        var center = vector_float3(0, 0, 0)
+        for i in 0..<vertexCount {
+            center += vertices[i]
+        }
+        center = center / Float(vertexCount)
+        
+        // Normalizar y guardar todos los vértices
+        for i in 0..<vertexCount {
+            let normalizedVertex = vertices[i] - center
+            hashableData.append(contentsOf: withUnsafeBytes(of: normalizedVertex) { Data($0) })
+        }
+        
+        return EncryptionService.shared.hash(data: hashableData)
+    }
+    
+    private func combineHashes(_ hashes: [Data]) -> Data {
+        var combinedData = Data()
+        for hash in hashes {
+            combinedData.append(hash)
+        }
+        return EncryptionService.shared.hash(data: combinedData)
+    }
+    
+    private func compareFaceHashes(_ hash1: Data, _ hash2: Data) -> Double {
+        let matching = zip(hash1, hash2).filter { $0 == $1 }.count
+        let total = hash1.count
+        return Double(matching) / Double(total)
     }
     
     private func detectGesture(_ anchor: ARFaceAnchor) -> FacialGesture? {
         let blendShapes = anchor.blendShapes
         
-        // Guiño izquierdo: más preciso
-        if let eyeBlinkLeft = blendShapes[.eyeBlinkLeft]?.floatValue,
-           let eyeBlinkRight = blendShapes[.eyeBlinkRight]?.floatValue,
-           eyeBlinkLeft > 0.85 && eyeBlinkRight < 0.15 {
-            print("Guiño izquierdo detectado: L=\(eyeBlinkLeft) R=\(eyeBlinkRight)")
-            return .leftEyeWink
-        }
-        
-        // Guiño derecho: más preciso
+        // Guiño derecho: más preciso (corregido)
         if let eyeBlinkRight = blendShapes[.eyeBlinkRight]?.floatValue,
            let eyeBlinkLeft = blendShapes[.eyeBlinkLeft]?.floatValue,
            eyeBlinkRight > 0.85 && eyeBlinkLeft < 0.15 {
@@ -106,15 +172,15 @@ class FaceRegistrationManager: NSObject, ObservableObject {
             return .rightEyeWink
         }
         
-        // Imprimir valores para debug
-        print("Blend Shapes valores:")
-        print("Smile R: \(blendShapes[.mouthSmileRight]?.floatValue ?? 0)")
-        print("Smile L: \(blendShapes[.mouthSmileLeft]?.floatValue ?? 0)")
-        print("Brow Up: \(blendShapes[.browOuterUpRight]?.floatValue ?? 0)")
-        print("Jaw Open: \(blendShapes[.jawOpen]?.floatValue ?? 0)")
-        print("Eye Blink L: \(blendShapes[.eyeBlinkLeft]?.floatValue ?? 0)")
-        print("Eye Blink R: \(blendShapes[.eyeBlinkRight]?.floatValue ?? 0)")
+        // Guiño izquierdo: más preciso (corregido)
+        if let eyeBlinkLeft = blendShapes[.eyeBlinkLeft]?.floatValue,
+           let eyeBlinkRight = blendShapes[.eyeBlinkRight]?.floatValue,
+           eyeBlinkLeft > 0.85 && eyeBlinkRight < 0.15 {
+            print("Guiño izquierdo detectado: L=\(eyeBlinkLeft) R=\(eyeBlinkRight)")
+            return .leftEyeWink
+        }
         
+
         // Sonrisa: combinar ambos lados y reducir umbral
         if let smileRight = blendShapes[.mouthSmileRight]?.floatValue,
            let smileLeft = blendShapes[.mouthSmileLeft]?.floatValue,
@@ -149,6 +215,65 @@ class FaceRegistrationManager: NSObject, ObservableObject {
             self.registrationStatus = "Realiza el gesto solicitado"
         }
     }
+    
+    public func stopTracking() {
+        DispatchQueue.main.async {
+            self.arSession.pause()
+            self.faceAnchor = nil 
+            self.currentGesture = nil
+            self.registrationStatus = ""
+        }
+    }
+    
+    private func completeRegistration() {
+        DispatchQueue.main.async {
+            print("Completando registro...")
+            
+            guard let faceAnchor = self.faceAnchor else {
+                print("Error: No hay face anchor al completar registro")
+                return
+            }
+            
+            let finalHash = self.calculateFaceHash(faceAnchor.geometry.vertices)
+            self.registeredFaceHash = finalHash
+            
+            UserDefaults.standard.set(finalHash, forKey: "RegisteredFaceHash")
+            UserDefaults.standard.set(true, forKey: "FaceRegistrationCompleted")
+            UserDefaults.standard.synchronize()
+            
+            self.isRegistered = true
+            
+            print("Registro completado...")
+            self.printRegistrationStatus() // Debug final
+            
+            // Guardar el historial
+            let context = PersistenceController.shared.container.viewContext
+            let historyItem = HistoryItem(context: context)
+            historyItem.id = UUID()
+            historyItem.timestamp = Date()
+            historyItem.success = true
+            historyItem.failureReason = ""
+            historyItem.siteId = UUID()
+            historyItem.siteIssuer = "Sistema"
+            historyItem.siteName = "Registro Facial"
+            
+            do {
+                try context.save()
+                print("Historial guardado correctamente")
+            } catch {
+                print("Error guardando historial: \(error)")
+            }
+        }
+    }
+    
+    // Añadir método para debug
+    public func printRegistrationStatus() {
+        let hash = UserDefaults.standard.data(forKey: "RegisteredFaceHash")
+        let isReg = UserDefaults.standard.bool(forKey: "FaceRegistrationCompleted")
+        print("Estado actual de registro:")
+        print("Hash guardado: \(hash != nil)")
+        print("isRegistered: \(isReg)")
+    }
 }
 
 // MARK: - ARSessionDelegate
@@ -176,8 +301,6 @@ extension FaceRegistrationManager: ARSessionDelegate {
             } else {
                 handleRegistrationGesture(detectedGesture)
             }
-        } else {
-            print("Ningún gesto detectado")
         }
     }
     
@@ -192,29 +315,19 @@ extension FaceRegistrationManager: ARSessionDelegate {
         // Verificamos que el gesto coincida con el esperado
         guard gesture == FacialGesture.registrationGestures[currentGestureIndex] else {
             print("Gesto incorrecto: esperado \(FacialGesture.registrationGestures[currentGestureIndex]), recibido \(gesture)")
-            // No cambiamos el progress cuando hay un error
             return
         }
         
-        print("Gesto registrado correctamente: \(gesture)")
-        
         DispatchQueue.main.async {
-            // Actualizamos el progreso antes de incrementar el índice
             self.registrationProgress = Float(self.currentGestureIndex + 1) / Float(FacialGesture.registrationGestures.count)
-            
-            // Avanzamos al siguiente gesto
             self.currentGestureIndex += 1
             
             if self.currentGestureIndex < FacialGesture.registrationGestures.count {
-                // Todavía hay más gestos por registrar
                 self.currentGesture = FacialGesture.registrationGestures[self.currentGestureIndex]
                 self.registrationStatus = "¡Correcto! Siguiente gesto: \(self.currentGesture?.description ?? "")"
-                print("Siguiente gesto: \(String(describing: self.currentGesture))")
             } else {
-                // Hemos completado todos los gestos
-                print("Registro completado")
-                self.registrationStatus = "¡Registro completado!"
                 self.completeRegistration()
+                self.registrationStatus = "¡Registro completado!"
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                     self.stopTracking()
                 }
@@ -225,35 +338,18 @@ extension FaceRegistrationManager: ARSessionDelegate {
     private func handleVerificationGesture(_ gesture: FacialGesture) {
         guard gesture == verificationGesture else { return }
         
+        // Verificar que la cara coincide con el hash guardado
+        guard let faceAnchor = self.faceAnchor,
+              validateFaceGeometry(faceAnchor.geometry) else {
+            self.registrationStatus = "Cara no reconocida"
+            return
+        }
+        
         // Verificación exitosa
-        registrationProgress = 1.0
-        registrationStatus = "¡Verificación exitosa!"
+        self.registrationProgress = 1.0
+        self.registrationStatus = "¡Verificación exitosa!"
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             self.stopTracking()
-        }
-    }
-    
-    private func completeRegistration() {
-        DispatchQueue.main.async {
-            self.isRegistered = true
-            UserDefaults.standard.set(true, forKey: "FaceRegistrationCompleted")
-            
-            // Guardar el historial de registro exitoso
-            let context = PersistenceController.shared.container.viewContext
-            let historyItem = HistoryItem(context: context)
-            historyItem.id = UUID()
-            historyItem.timestamp = Date()
-            historyItem.success = true
-            historyItem.failureReason = "" // Añadimos un valor por defecto
-            historyItem.siteId = UUID() // ID temporal para el registro
-            historyItem.siteIssuer = "Sistema"
-            historyItem.siteName = "Registro Facial"
-            
-            do {
-                try context.save()
-            } catch {
-                print("Error guardando historial: \(error)")
-            }
         }
     }
 } 

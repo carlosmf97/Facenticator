@@ -35,6 +35,10 @@ class BiometricManager: NSObject, ObservableObject {
         super.init()
     }
     
+    func toggleSkipIntro() {
+        skipVerificationIntro.toggle()
+    }
+
     func authenticateWithBiometrics(completion: @escaping (Bool) -> Void) {
         let context = LAContext()
         var error: NSError?

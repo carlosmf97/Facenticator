@@ -9,22 +9,30 @@ struct BiometricAuthView: View {
     @State private var remainingTime = 20
     @State private var remainingAttempts = 2
     @State private var statusMessage = ""
-    @State private var statusIcon = "checkmark.circle.fill" 
+    @State private var statusIcon = "checkmark.circle.fill"
     @State private var statusColor = Color.green
     @State private var isTimerActive = false
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    let site : Site
+    @Binding var isPresented : Bool
     
     var body: some View {
         ZStack {
-            if biometricManager.skipVerificationIntro {
+            if !FaceRegistrationManager.shared.isRegistered {
+                // Si no hay cara registrada, mostrar registro
+                FaceRegistrationView()
+            /*} else if biometricManager.skipVerificationIntro {
+                // Si hay cara registrada y queremos saltar la intro
                 FaceRegistrationView()
                     .onAppear {
-                        isTimerActive = true
+                        FaceRegistrationManager.shared.startVerification()
                     }
-            } else {
-                VerificationIntroView(showVerification: $showBiometricAuth)
-            }
-            
+                    .onChange(of: FaceRegistrationManager.shared.registrationProgress) { progress in
+                        if progress >= 1.0 {
+                            authResult = true
+                        }
+                    }*/
+            } 
             // Overlay para mensajes y timer
             VStack {
                 Spacer()
@@ -145,4 +153,4 @@ struct BiometricAuthView: View {
             showFinalFailureMessage()
         }
     }
-} 
+}

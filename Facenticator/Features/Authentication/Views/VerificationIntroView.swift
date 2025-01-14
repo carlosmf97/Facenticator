@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct VerificationIntroView: View {
+    let site: Site
     @Binding var showVerification: Bool
-    @Environment(\.dismiss) private var dismiss
+    @Binding var showAuthRequest: Bool
     @StateObject private var biometricManager = BiometricManager.shared
     @State private var dontShowAgain = false
     
@@ -30,8 +31,12 @@ struct VerificationIntroView: View {
                     .foregroundColor(.secondary)
                     .padding(.horizontal)
                 
-                NavigationLink {
-                    FaceRegistrationView()
+                Button {
+                    if dontShowAgain {
+                        biometricManager.skipVerificationIntro = true
+                    }
+                    showVerification = false
+                    showAuthRequest = true
                 } label: {
                     Text("Comenzar Verificación")
                         .font(AppTheme.Typography.title3)
@@ -41,11 +46,6 @@ struct VerificationIntroView: View {
                         .background(AppTheme.Colors.primary)
                         .cornerRadius(12)
                 }
-                .simultaneousGesture(TapGesture().onEnded {
-                    if dontShowAgain {
-                        biometricManager.skipVerificationIntro = true
-                    }
-                })
                 .padding(.horizontal)
                 
                 Button {

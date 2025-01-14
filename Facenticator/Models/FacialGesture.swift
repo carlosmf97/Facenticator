@@ -18,9 +18,9 @@ enum FacialGesture: String, CaseIterable {
         case .openMouth:
             return "Abre la boca"
         case .leftEyeWink:
-            return "Guiña el ojo izquierdo"
-        case .rightEyeWink:
             return "Guiña el ojo derecho"
+        case .rightEyeWink:
+            return "Guiña el ojo izquierdo"
         }
     }
     

@@ -3,9 +3,11 @@ import LocalAuthentication
 
 struct SiteListView: View {
     @StateObject private var viewModel = SiteListViewModel()
-    @State private var showingAddSite = false
+    @StateObject private var biometricManager = BiometricManager.shared
+    @StateObject private var faceManager = FaceRegistrationManager.shared
+    @State private var showingVerificationIntro = false
+    @State private var showingAuthRequest = false
     @State private var searchText = ""
-    @State private var showingBiometricAuth = false
     @State private var isAnimatingButton = false
     @State private var selectedSite: Site?
     @State private var authResult: Bool?
@@ -19,12 +21,19 @@ struct SiteListView: View {
                     .padding(.leading)
                 Spacer()
                 Button {
-                    showingAddSite = true
+                    handleAuthenticationRequest()
                 } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .semibold))
+                    Image(systemName: "faceid")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 56, height: 56)
+                        .background(AppTheme.Colors.primary)
+                        .clipShape(Circle())
+                        .shadow(color: AppTheme.Colors.primary.opacity(0.3), radius: 10, x: 0, y: 5)
                 }
-                .padding(.trailing)
+                .scaleEffect(isAnimatingButton ? 0.9 : 1)
+                .padding(.trailing, 20)
+                .padding(.bottom, 70)
             }
             .padding(.vertical)
             
@@ -53,13 +62,7 @@ struct SiteListView: View {
                     HStack {
                         Spacer()
                         Button {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                isAnimatingButton = true
-                                sendTestNotification()
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                isAnimatingButton = false
-                            }
+                            handleAuthenticationRequest()
                         } label: {
                             Image(systemName: "faceid")
                                 .font(.system(size: 20, weight: .semibold))
@@ -76,35 +79,53 @@ struct SiteListView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingAddSite) {
-            AddSiteView(viewModel: viewModel)
+        .sheet(isPresented: $showingVerificationIntro) {
+            if let site = selectedSite {
+                VerificationIntroView(
+                    site: site,
+                    showVerification: $showingVerificationIntro,
+                    showAuthRequest: $showingAuthRequest
+                )
+            }
         }
-        .sheet(isPresented: $showingBiometricAuth) {
-            BiometricAuthView(showBiometricAuth: $showingBiometricAuth, authResult: $authResult)
+        .sheet(isPresented: $showingAuthRequest) {
+            if let site = selectedSite {
+                AuthRequestView(site: site, isPresented: $showingAuthRequest)
+            }
         }
     }
     
-    private func sendTestNotification() {
-        // Buscar un sitio con autenticación biométrica
-        let biometricSites = viewModel.filteredSites.filter { site in
-            site.authLevel == AuthorizationLevel.biometric.rawValue
-        }
-        
-        guard let selectedSite = biometricSites.first ?? viewModel.filteredSites.first else {
+    private func handleAuthenticationRequest() {
+        // Buscar un sitio para la prueba
+        guard let site = viewModel.filteredSites.first(where: { $0.authLevel == AuthorizationLevel.biometric.rawValue }) ?? viewModel.filteredSites.first else {
             print("No hay sitios disponibles")
             return
         }
         
-        // En lugar de establecer selectedSite, mostramos directamente BiometricAuthView
-        showingBiometricAuth = true
+        selectedSite = site
+        
+        if !faceManager.isRegistered {
+            // Si no hay cara registrada, mostrar registro directamente
+            showingAuthRequest = true
+        } else if biometricManager.skipVerificationIntro {
+            // Si hay cara y queremos saltar intro, mostrar auth directamente
+            showingAuthRequest = true
+        } else {
+            // Si hay cara pero queremos mostrar intro
+            showingVerificationIntro = true
+        }
         
         // Enviar notificación
+        sendTestNotification(for: site)
+    }
+    
+    private func sendTestNotification(for site: Site) {
         let content = UNMutableNotificationContent()
         content.title = "Verificación Biométrica Requerida"
-        content.body = "Se requiere tu verificación facial para \(selectedSite.wrappedIssuer)"
+        content.body = "Se requiere tu verificación facial para \(site.wrappedIssuer)"
         content.sound = .default
         content.userInfo = [
-            "siteId": selectedSite.id?.uuidString ?? UUID().uuidString,
+            "siteId": site.id?.uuidString ?? UUID().uuidString,
             "requestId": "test-\(Int.random(in: 1000...9999))"
         ]
         
@@ -115,4 +136,5 @@ struct SiteListView: View {
         HapticManager.shared.impact(style: .medium)
     }
 }
+
 
