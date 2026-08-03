@@ -1,79 +1,39 @@
 # Facenticator
 
-## 🔐 Autenticación Facial con ARKit y SwiftUI
+A two-factor authentication (2FA) app for iOS that guards your TOTP codes behind facial-gesture authentication built on ARKit.
 
-Facenticator es una aplicación iOS que implementa autenticación facial avanzada mediante gestos utilizando ARKit.
+Instead of a fingerprint or a passcode, you unlock your one-time codes by replaying a sequence of facial gestures the app captures with the TrueDepth camera.
 
-## ⚖️ Licencia y Protección de Código
+## Features
 
-© 2025 Carlos Muñoz Fernández. Todos los derechos reservados.
+- **TOTP authenticator:** stores and generates time-based one-time codes for your accounts, like a standard 2FA app.
+- **Facial-gesture unlock:** register a personal sequence of facial gestures (ARKit) and replay it to unlock the vault.
+- **Biometric fallback:** Face ID / Touch ID via LocalAuthentication.
+- **Encrypted at rest:** secrets live in the Keychain, with an added encryption layer over stored data.
+- **Access history:** a per-site log of authentication events.
+- **Site management:** add and organize the accounts protected by the app.
 
-### Componentes Protegidos
-Todo el código en este repositorio está protegido, especialmente:
+## How it works
 
-1. **Core Authentication (`/Core/Authentication/`)**
-   - `FaceRegistrationManager.swift`
-   - `BiometricManager.swift`
-   - `AuthenticationManager.swift`
+1. **Registration:** the user records a sequence of facial gestures. ARKit blend shapes capture each gesture and the app stores only a derived representation, never raw face data.
+2. **Locked vault:** TOTP secrets are encrypted and kept in the Keychain; the app stays locked until the user authenticates.
+3. **Verification:** to unlock, the user replays the gesture sequence. On a match, the vault decrypts and the current TOTP codes become available.
 
-2. **Security Services (`/Core/Security/`)**
-   - `EncryptionService.swift`
+## Architecture
 
-3. **Features y UI**
-   - Todas las vistas y componentes UI
-   - Lógica de navegación y flujos de usuario
-   - Implementaciones de características
+Feature-first layout over a shared core:
 
-4. **Algoritmos y Lógica de Negocio**
-   - Detección y validación de gestos faciales
-   - Algoritmos de hash y verificación
-   - Lógica de autenticación biométrica
+- `Core/Authentication`: gesture registration, biometric handling and TOTP generation.
+- `Core/Security`: encryption of stored data.
+- `Core/Storage`: Keychain and Core Data persistence.
+- `Features/*`: SwiftUI views and view models (registration, sites, history, settings).
 
-### Términos de Uso
+**Stack:** SwiftUI · ARKit · LocalAuthentication · Core Data · Keychain · TOTP.
 
-1. **Usos Permitidos**
-   - ✅ Revisión del código con fines exclusivamente educativos
-   - ✅ Ejecución local para estudio personal
-   - ❗ NO se permite la implementación de ninguna parte del código
+## Status
 
-2. **Usos Prohibidos**
-   - ❌ Uso comercial
-   - ❌ Redistribución del código
-   - ❌ Modificación de cualquier componente
-   - ❌ Creación de trabajos derivados
-   - ❌ Implementación de características en otros proyectos
-   - ❌ Fork del repositorio sin permiso explícito
-   - ❌ Uso en aplicaciones de cualquier tipo
+Portfolio project, not distributed on the App Store.
 
-3. **Atribución Obligatoria**
-   Cualquier referencia al código debe incluir:
-   - Crédito al autor original
-   - Link a este repositorio
-   - Copia de esta licencia
+## License
 
-### 🚫 Aviso Legal
-
-1. **Propiedad Intelectual**
-   - Todo el código, diseños y algoritmos son propiedad intelectual exclusiva del autor
-   - Las violaciones serán perseguidas legalmente
-   - No se otorga ningún derecho de uso o modificación
-
-2. **Responsabilidad**
-   - El software se proporciona únicamente con fines demostrativos
-   - Sin garantías de ningún tipo
-   - El autor no es responsable de usos indebidos
-
-3. **Seguridad**
-   - Los componentes son críticos para la seguridad
-   - No se permite su implementación en ningún contexto
-
-### 📧 Contacto
-
-Para permisos especiales o consultas:
-- Email: carlos.nextgen@gmail.com
-- LinkedIn: https://www.linkedin.com/in/carlos-mufer/
-- GitHub: https://github.com/carlosmf97
-
----
-
-**IMPORTANTE**: Este código es únicamente para propósitos de portfolio y demostración. Cualquier uso más allá de la revisión del código está estrictamente prohibido y será perseguido legalmente.
+© 2025 Carlos Muñoz Fernández. All rights reserved. Source is available for review only; see [LICENSE](LICENSE).
