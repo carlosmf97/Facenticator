@@ -1,0 +1,10 @@
+# Firebase / secrets
+**/GoogleService-Info.plist
+*.mobileprovision
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+build/
+DerivedData/
+.DS_Store
